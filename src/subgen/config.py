@@ -41,7 +41,7 @@ DIARIZE_CACHE = CACHE_DIR / "diarization"
 
 DEFAULTS: dict[str, Any] = {
     "ollama_model": None,  # last model the user chose; None = ask
-    "whisper_model": "large-v3",  # overridable; any faster-whisper name works
+    "whisper_model": "large-v3-turbo",  # overridable; any faster-whisper name works
     "target_language": "Chinese (Simplified)",
     "source_language": "Auto-detect",
     "identify_speakers": True,

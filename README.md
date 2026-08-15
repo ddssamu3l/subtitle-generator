@@ -39,7 +39,7 @@ Pick some videos, choose a subtitle language for each, and get back a new video 
 | **Python 3.10+** | The installer handles this for you |
 | **ffmpeg** | Reads your videos and renders the output |
 | **Ollama** *(optional)* | Only needed for translation. Without it you still get subtitles in the spoken language. |
-| **Disk** | ~3 GB for the transcription model, ~35 MB for speaker detection |
+| **Disk** | ~1.6 GB for the transcription model, ~35 MB for speaker detection |
 
 Works on macOS, Linux, and Windows. No GPU required. No PyTorch — the install is ~200 MB of wheels, not 2.5 GB.
 
@@ -126,7 +126,7 @@ subgen clip.mp4 --lang ja --model qwen3:8b --scale 1.2
 | `-l, --lang` | Target subtitle language (`zh-Hans`, `en`, `ja`, …). Omit to keep the spoken language. |
 | `--spoken` | Override spoken-language detection |
 | `-m, --model` | Ollama model to translate with |
-| `--whisper-model` | Transcription model (`tiny`…`large-v3`, default `large-v3`) |
+| `--whisper-model` | Transcription model (`tiny`, `base`, `small`, `medium`, `large-v3-turbo`, `large-v3`, …). Default `large-v3-turbo` |
 | `-o, --output-dir` | Where finished videos go |
 | `--no-speakers` | Disable speaker detection, so lines never stack |
 | `--speakers N` | Exact speaker count, if you know it (default: auto-detect) |
@@ -257,7 +257,9 @@ macOS and Windows ship suitable fonts already.
 <details>
 <summary><b>Transcription is slow</b></summary>
 
-`large-v3` is the most accurate and the slowest. Try `--whisper-model medium` or `small`. On Apple Silicon, `uv pip install -e ".[mlx]"` enables GPU transcription for a large speedup.
+The default `large-v3-turbo` is already the fast option — it's `large-v3` with a pruned decoder, roughly 4× faster and half the download at close to the same accuracy. If you need more speed, try `--whisper-model medium` or `small`; if you need maximum accuracy on difficult audio, `--whisper-model large-v3` (a ~3.1 GB download).
+
+On Apple Silicon, `uv pip install -e ".[mlx]"` enables GPU transcription for a large further speedup — CTranslate2 has no Metal backend, so the default path is CPU.
 </details>
 
 ---

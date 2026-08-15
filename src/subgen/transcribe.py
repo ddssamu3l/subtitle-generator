@@ -33,11 +33,17 @@ SUGGESTED_MODELS: tuple[str, ...] = (
     "base",
     "small",
     "medium",
-    "large-v3",
     "large-v3-turbo",
+    "large-v3",
 )
 
-DEFAULT_MODEL = "large-v3"
+# Turbo is large-v3 with a pruned decoder: four decoder layers instead of
+# thirty-two. It transcribes at close to large-v3 accuracy for roughly a
+# quarter of the compute and half the download, which matters here because
+# CTranslate2 has no Metal backend and most users are transcribing on CPU.
+# It is weaker at Whisper's own translate task, which is irrelevant to us —
+# translation goes through a separate LLM.
+DEFAULT_MODEL = "large-v3-turbo"
 
 
 def _apple_silicon() -> bool:

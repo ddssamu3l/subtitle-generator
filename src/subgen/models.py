@@ -102,11 +102,17 @@ def whisper_cached(model: str) -> bool:
     if candidate.exists():
         return True
 
+    # Match the end of the directory name, not any substring. HuggingFace names
+    # these `models--<org>--faster-whisper-<model>`, so a substring test would
+    # let "large-v3" match the "large-v3-turbo" directory and wrongly report a
+    # model as already downloaded — which then fails at load time, because
+    # normal runs are forbidden from reaching the network to fetch it.
     needle = model.replace("/", "--").lower()
     for entry in root.rglob("*"):
         if not entry.is_dir():
             continue
-        if needle not in entry.name.lower():
+        name = entry.name.lower()
+        if not (name.endswith(f"-{needle}") or name.endswith(f"--{needle}")):
             continue
         if any(entry.rglob("*.bin")) or any(entry.rglob("*.safetensors")):
             return True
