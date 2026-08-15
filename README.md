@@ -96,7 +96,7 @@ subgen --list-models
 subgen
 ```
 
-A file picker opens, filtered to formats we can actually process. Choose one or many videos, set a subtitle language for each, press **Generate subtitles**.
+The app window opens. Click **Choose videos…** to open your file explorer, filtered to formats we can actually process. Pick one or many, set a subtitle language for each, then press **Generate subtitles**.
 
 Output lands next to the original as `yourvideo.zh-Hans.mp4`. **Your original file is never modified.**
 
@@ -230,6 +230,19 @@ macOS and Windows ship suitable fonts already.
 
 `large-v3` is the most accurate and the slowest. Try `--whisper-model medium` or `small`. On Apple Silicon, `uv pip install -e ".[mlx]"` enables GPU transcription for a large speedup.
 </details>
+
+---
+
+## Development
+
+```bash
+uv pip install -e ".[dev]"
+pytest
+```
+
+The test suite covers the dialogue layout rules — when lines stack, when they
+replace, and how text is wrapped — and reads as a specification of the intended
+on-screen behaviour.
 
 ---
 

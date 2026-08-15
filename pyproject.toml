@@ -24,6 +24,9 @@ dependencies = [
 # without it, just slower. Not a hard dependency because it is macOS/arm64 only.
 mlx = ["mlx-whisper>=0.4"]
 
+# For running the test suite:  uv pip install -e ".[dev]" && pytest
+dev = ["pytest>=8.0"]
+
 [project.scripts]
 subgen = "subgen.cli:main"
 

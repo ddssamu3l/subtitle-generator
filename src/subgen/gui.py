@@ -77,7 +77,7 @@ class App:
         ttk.Label(
             header, text="Videos", font=("", 13, "bold")
         ).grid(row=0, column=0, sticky="w")
-        ttk.Button(header, text="Add videos…", command=self._add_videos).grid(
+        ttk.Button(header, text="Choose videos…", command=self._add_videos).grid(
             row=0, column=1, padx=(PAD, 0)
         )
         ttk.Button(header, text="Remove all", command=self._clear_videos).grid(
@@ -370,14 +370,29 @@ class App:
             child.destroy()
 
         if not self.videos:
+            # Empty state carries its own call to action, so the first thing to
+            # do is obvious without hunting for the button in the header.
+            empty = ttk.Frame(self.rows, padding=28)
+            empty.pack(expand=True)
+
             ttk.Label(
-                self.rows,
-                text="No videos chosen yet.\n\n"
-                f"Supported formats: {formats.describe()}",
-                justify="center",
-                foreground="#777",
-                padding=24,
+                empty,
+                text="No videos chosen yet",
+                font=("", 12),
+                foreground="#666",
             ).pack()
+            ttk.Button(
+                empty, text="Choose videos…", command=self._add_videos
+            ).pack(pady=(12, 10))
+            ttk.Label(
+                empty,
+                text=f"Supported formats: {formats.describe()}",
+                justify="center",
+                foreground="#999",
+                font=("", 9),
+                wraplength=460,
+            ).pack()
+
             self.start_button.state(["disabled"])
             return
 
@@ -574,10 +589,27 @@ class App:
         self.log.configure(state="disabled")
 
     def run(self) -> None:
-        # Snapshot per-file options on the main thread; the worker must not
-        # read Tk variables.
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._bring_to_front()
         self.root.mainloop()
+
+    def _bring_to_front(self) -> None:
+        """Make sure the window appears in front of the terminal that launched it.
+
+        A Tk window started from a terminal on macOS routinely opens behind it,
+        which looks like the command silently did nothing. Raising it briefly
+        with topmost, then releasing, puts it in front without pinning it above
+        everything else for the rest of the session.
+        """
+        try:
+            self.root.update_idletasks()
+            self.root.lift()
+            self.root.attributes("-topmost", True)
+            self.root.after(200, lambda: self.root.attributes("-topmost", False))
+            self.root.focus_force()
+        except tk.TclError:
+            # Cosmetic only — never let window management stop the app running.
+            pass
 
     def _on_close(self) -> None:
         self.cancel_event.set()
@@ -611,14 +643,6 @@ def run() -> int:
             file=sys.stderr,
         )
         return 1
-
-    # Prompt for files immediately — the user launched a subtitle tool, so
-    # making them press "Add videos" first is a pointless extra step.
-    app.root.update_idletasks()
-    initial = pick_files(app.root)
-    if initial:
-        app.videos.extend(initial)
-        app._refresh_rows()
 
     app.run()
     return 0
