@@ -45,6 +45,7 @@ DEFAULTS: dict[str, Any] = {
     "target_language": "Chinese (Simplified)",
     "source_language": "Auto-detect",
     "identify_speakers": True,
+    "keep_original": True,  # False burns into the original, irreversibly
     "speaker_sensitivity": "Balanced (recommended)",
     "keep_sidecar_files": True,
     "ollama_host": None,  # None = use OLLAMA_HOST env or the default port

@@ -96,6 +96,7 @@ class VideoInfo:
     has_audio: bool
     video_codec: str = ""
     audio_codec: str = ""
+    video_bitrate: int = 0  # bits/sec; 0 when it could not be determined
 
     @property
     def duration_label(self) -> str:
@@ -169,7 +170,50 @@ def probe(path: Path) -> VideoInfo:
         has_audio=audio is not None,
         video_codec=video.get("codec_name") or "",
         audio_codec=(audio or {}).get("codec_name") or "",
+        video_bitrate=_video_bitrate(payload, video, audio, path, duration),
     )
+
+
+def _video_bitrate(payload, video, audio, path: Path, duration: float) -> int:
+    """Best available estimate of the source's video bitrate, in bits/sec.
+
+    Needed so the re-encode can match the source instead of inventing a size.
+    Containers vary in what they report, so this tries progressively weaker
+    evidence rather than giving up at the first missing field.
+    """
+
+    def as_int(value) -> int:
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return 0
+
+    # 1. The video stream states it outright. MP4/MOV usually do.
+    direct = as_int(video.get("bit_rate"))
+    if direct > 0:
+        return direct
+
+    # 2. Some Matroska files put it in stream tags instead.
+    for key in ("BPS", "BPS-eng"):
+        tagged = as_int((video.get("tags") or {}).get(key))
+        if tagged > 0:
+            return tagged
+
+    # 3. Container total, minus audio if we know it. Otherwise assume audio is
+    #    a small slice, which is true for essentially all real video files.
+    total = as_int(payload.get("format", {}).get("bit_rate"))
+    if total > 0:
+        audio_rate = as_int((audio or {}).get("bit_rate"))
+        return max(total - audio_rate, int(total * 0.92)) if audio_rate else int(total * 0.92)
+
+    # 4. Last resort: derive it from how big the file actually is.
+    if duration > 0:
+        try:
+            return int(path.stat().st_size * 8 / duration * 0.92)
+        except OSError:
+            pass
+
+    return 0
 
 
 def extract_audio(source: Path, destination: Path, *, progress: ProgressFn | None = None) -> Path:
@@ -212,19 +256,60 @@ def _supports_encoder(name: str) -> bool:
     return name in result.stdout
 
 
+SUBTITLE_BITRATE_HEADROOM = 1.10  # burned-in text is sharp and costs extra bits
+
+# Used only when the source bitrate is unknown, keyed by pixel count.
+_FALLBACK_BITRATES: tuple[tuple[int, int], ...] = (
+    (3840 * 2160, 16_000_000),
+    (2560 * 1440, 9_000_000),
+    (1920 * 1080, 5_000_000),
+    (1280 * 720, 2_500_000),
+    (854 * 480, 1_200_000),
+)
+
+MIN_BITRATE = 400_000
+MAX_BITRATE = 40_000_000
+
+
+def target_bitrate(source_bitrate: int, width: int, height: int) -> int:
+    """Choose an output bitrate that keeps the file close to the original size.
+
+    Re-encoding at a fixed rate is what turns a modest 1.7GB source into a
+    7.7GB output: the encoder is simply told to spend far more bits than the
+    original ever used. Matching the source, with a little headroom for the
+    hard edges of burned-in text, keeps the result about the same size and the
+    same visual quality.
+    """
+    if source_bitrate > 0:
+        chosen = int(source_bitrate * SUBTITLE_BITRATE_HEADROOM)
+    else:
+        pixels = max(width * height, 1)
+        chosen = _FALLBACK_BITRATES[-1][1]
+        for threshold, rate in _FALLBACK_BITRATES:
+            if pixels >= threshold:
+                chosen = rate
+                break
+
+    return max(MIN_BITRATE, min(chosen, MAX_BITRATE))
+
+
 def burn_in(
     source: Path,
     subtitle_file: Path,
     destination: Path,
     *,
     duration: float = 0.0,
+    source_bitrate: int = 0,
+    width: int = 0,
+    height: int = 0,
     progress: ProgressFn | None = None,
     prefer_hardware: bool = True,
 ) -> Path:
     """Render `subtitle_file` (ASS) permanently into the picture.
 
     The original file is never modified; we always write a new one. Audio is
-    stream-copied, so only the video is re-encoded.
+    stream-copied, so only the video is re-encoded — and the video bitrate is
+    derived from the source so the output does not balloon in size.
     """
     ffmpeg = require_ffmpeg()
     if not subtitle_file.exists():
@@ -239,10 +324,25 @@ def burn_in(
     local_subs = scratch / "subs.ass"
     shutil.copyfile(subtitle_file, local_subs)
 
+    target = target_bitrate(source_bitrate, width, height)
+
     attempts: list[list[str]] = []
     if prefer_hardware and sys.platform == "darwin" and _supports_encoder("h264_videotoolbox"):
-        attempts.append(["-c:v", "h264_videotoolbox", "-b:v", "8M"])
-    attempts.append(["-c:v", "libx264", "-preset", "medium", "-crf", "20"])
+        # VideoToolbox has no constant-quality mode worth relying on, so it is
+        # driven by an explicit bitrate derived from the source.
+        attempts.append([
+            "-c:v", "h264_videotoolbox",
+            "-b:v", str(target),
+            "-maxrate", str(int(target * 1.5)),
+            "-bufsize", str(int(target * 3)),
+        ])
+    # x264 is quality-driven, but CRF alone will happily spend far more bits
+    # than the source used, so it is capped as well.
+    attempts.append([
+        "-c:v", "libx264", "-preset", "medium", "-crf", "21",
+        "-maxrate", str(int(target * 1.4)),
+        "-bufsize", str(int(target * 2.5)),
+    ])
 
     # +faststart is an MP4-family muxer option; other containers reject it.
     container_args = (

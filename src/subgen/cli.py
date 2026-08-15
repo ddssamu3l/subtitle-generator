@@ -97,6 +97,13 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--replace-original", action="store_true",
+        help=(
+            "burn subtitles into the original file instead of writing a copy. "
+            "CANNOT BE UNDONE — the un-subtitled video is gone."
+        ),
+    )
+    parser.add_argument(
         "--no-sidecars", action="store_true",
         help="do not write .ass/.srt files alongside the video",
     )
@@ -283,6 +290,7 @@ def _headless(args: argparse.Namespace) -> int:
         ollama_model=args.model or settings.get("ollama_model"),
         ollama_host=settings.get("ollama_host"),
         identify_speakers=not args.no_speakers,
+        replace_original=args.replace_original,
         keep_sidecar_files=not args.no_sidecars,
         output_dir=args.output_dir,
         subtitle_scale=args.scale,

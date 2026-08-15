@@ -100,7 +100,17 @@ subgen
 
 The app window opens. Click **Choose videos…** to open your file explorer, filtered to formats we can actually process. Pick one or many, set a subtitle language for each, then press **Generate subtitles**.
 
-Output lands next to the original as `yourvideo.zh-Hans.mp4`. **Your original file is never modified.**
+Output lands next to the original as `yourvideo.zh-Hans.mp4`. **Your original file is never modified**, unless you turn that off.
+
+The output keeps roughly the source file's size — the video bitrate is matched to the original rather than fixed, so a 1.7 GB film comes back around 1.9 GB, not 8 GB.
+
+<details>
+<summary><b>Replacing the original instead of making a copy</b></summary>
+
+Untick **Keep the original video and save the subtitled one as a copy** (or pass `--replace-original`) to burn subtitles into the file itself. Useful when you don't want two copies of every video on disk.
+
+This cannot be undone — there is no way to remove burned-in subtitles. So it is done carefully: the new file is rendered under a temporary name, checked for correct dimensions, intact audio and full duration, and only then swapped in atomically. If anything fails, the original is left exactly as it was. Formats that cannot be safely rewritten in place (`.avi`, `.wmv`, `.flv` …) silently get a copy instead.
+</details>
 
 ### Command line
 
@@ -131,6 +141,7 @@ subgen clip.mp4 --lang ja --model qwen3:8b --scale 1.2
 | `--no-speakers` | Disable speaker detection, so lines never stack |
 | `--speakers N` | Exact speaker count, if you know it (default: auto-detect) |
 | `--speaker-sensitivity F` | How eagerly to split similar voices, 0.2–0.8 (default 0.5; lower finds more) |
+| `--replace-original` | Burn into the original file instead of a copy. Cannot be undone |
 | `--no-sidecars` | Don't write `.ass`/`.srt` alongside the video |
 | `--scale` | Subtitle size multiplier |
 </details>

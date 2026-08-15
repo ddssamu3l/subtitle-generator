@@ -185,12 +185,34 @@ class App:
         )
         self.sensitivity_combo.grid(row=3, column=1, sticky="ew", padx=(6, PAD), pady=(6, 0))
 
+        # On = write a subtitled copy and leave the original alone. Off = burn
+        # into the original, which is irreversible, so it also warns below.
+        self.keep_original_var = tk.BooleanVar(value=bool(self.settings["keep_original"]))
+        ttk.Checkbutton(
+            box,
+            text="Keep the original video and save the subtitled one as a copy",
+            variable=self.keep_original_var,
+            command=self._toggle_keep_original,
+        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
+
+        self.replace_note = ttk.Label(
+            box,
+            text="",
+            foreground="#b00020",
+            font=("", 9),
+            wraplength=520,
+            justify="left",
+        )
+        self.replace_note.grid(row=5, column=0, columnspan=3, sticky="w", padx=(20, 0))
+
         self.sidecar_var = tk.BooleanVar(value=bool(self.settings["keep_sidecar_files"]))
         ttk.Checkbutton(
             box,
             text="Also save .ass and .srt files next to the video",
             variable=self.sidecar_var,
-        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(6, 0))
+
+        self._toggle_keep_original()
 
         self._toggle_sensitivity()
 
@@ -235,6 +257,18 @@ class App:
             if model.describe() == label:
                 return model.name
         return None
+
+    def _toggle_keep_original(self) -> None:
+        """Warn inline as soon as the destructive option is selected."""
+        if self.keep_original_var.get():
+            self.replace_note.configure(text="")
+        else:
+            self.replace_note.configure(
+                text=(
+                    "Subtitles will be burned into your original files, replacing "
+                    "them. This cannot be undone."
+                )
+            )
 
     def _toggle_sensitivity(self) -> None:
         """Grey out voice separation when speaker detection is off."""
@@ -488,6 +522,7 @@ class App:
             ollama_model=self.selected_model(),
             ollama_host=self.settings.get("ollama_host"),
             identify_speakers=self.speakers_var.get(),
+            replace_original=not self.keep_original_var.get(),
             keep_sidecar_files=self.sidecar_var.get(),
             speaker_sensitivity=self.selected_sensitivity(),
         )
@@ -520,6 +555,29 @@ class App:
             ):
                 return
 
+        # Overwriting the originals is irreversible, so confirm it explicitly
+        # rather than treating an unticked box as sufficient consent.
+        if not self.keep_original_var.get():
+            names = "\n".join(f"  • {path.name}" for path in self.videos[:8])
+            if len(self.videos) > 8:
+                names += f"\n  … and {len(self.videos) - 8} more"
+            unsafe = [p.name for p in self.videos if pipeline.can_replace_in_place(p)]
+            extra = (
+                "\n\nThese will get a copy instead, as their format cannot be "
+                "safely rewritten in place:\n  " + ", ".join(unsafe)
+                if unsafe else ""
+            )
+            if not messagebox.askyesno(
+                "Replace the original files?",
+                f"Subtitles will be burned permanently into:\n\n{names}{extra}\n\n"
+                "The un-subtitled versions will be gone and cannot be recovered.\n\n"
+                "Continue?",
+                icon="warning",
+                default="no",
+                parent=self.root,
+            ):
+                return
+
         self._remember_choices()
         self._options_snapshot = {path: self._build_options_for(path) for path in self.videos}
         self._show_progress()
@@ -536,6 +594,7 @@ class App:
                 "ollama_model": model,
                 "whisper_model": self.whisper_var.get().strip(),
                 "identify_speakers": self.speakers_var.get(),
+                "keep_original": self.keep_original_var.get(),
                 "keep_sidecar_files": self.sidecar_var.get(),
                 "speaker_sensitivity": self.sensitivity_var.get(),
                 "target_language": self.language_vars[self.videos[0]].get(),
@@ -656,7 +715,10 @@ def _describe(result: pipeline.Result) -> str:
     if result.error:
         return f"✗ {result.source.name}: {result.error}"
 
-    bits = [f"✓ {result.source.name} → {result.output.name if result.output else '?'}"]
+    if result.replaced_original:
+        bits = [f"✓ {result.source.name} (original replaced)"]
+    else:
+        bits = [f"✓ {result.source.name} → {result.output.name if result.output else '?'}"]
     detail = [f"{result.cue_count} lines"]
     if result.speaker_count:
         detail.append(f"{result.speaker_count} speakers")

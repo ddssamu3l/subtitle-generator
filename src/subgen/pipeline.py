@@ -7,6 +7,7 @@ front end.
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 import threading
@@ -44,6 +45,9 @@ class Options:
     ollama_model: str | None = None
     ollama_host: str | None = None
     identify_speakers: bool = True
+    # False writes a subtitled copy and leaves the source alone (the default).
+    # True burns into the original in place, which cannot be undone.
+    replace_original: bool = False
     keep_sidecar_files: bool = True
     output_dir: Path | None = None
     subtitle_scale: float = 1.0
@@ -62,6 +66,7 @@ class Result:
     speaker_count: int = 0
     detected_language: str = ""
     translated: bool = False
+    replaced_original: bool = False
     error: str | None = None
 
     @property
@@ -135,6 +140,22 @@ def preflight(options: Options) -> list[str]:
         )
 
     return problems
+
+
+# Containers we are willing to re-encode into in place. Others (avi, wmv, flv)
+# can technically hold H.264 but do so unreliably, and a broken result would
+# have destroyed the original — so replacing is refused for them.
+REPLACEABLE_CONTAINERS = frozenset({".mp4", ".mkv", ".mov", ".m4v", ".webm"})
+
+
+def can_replace_in_place(source: Path) -> str | None:
+    """None if replacing this file is safe, otherwise the reason it is not."""
+    if source.suffix.lower() not in REPLACEABLE_CONTAINERS:
+        return (
+            f"{source.suffix or 'this format'} cannot be safely rewritten in "
+            "place. A subtitled copy will be written instead."
+        )
+    return None
 
 
 def process(
@@ -250,14 +271,42 @@ def process(
         subtitles.write_ass(cues, style, ass_file)
 
         # 7. Burn in ----------------------------------------------------------
-        destination = output_path_for(source, options)
+        # In replace mode we render beside the original under a temporary name
+        # and only swap it in once the result has been verified. The original
+        # is therefore never in a partially-written state, and a crash or a
+        # cancellation mid-encode leaves it untouched.
+        replacing = options.replace_original and can_replace_in_place(source) is None
+        if replacing:
+            destination = source.parent / f".subgen-render-{source.stem}{source.suffix}"
+        else:
+            destination = output_path_for(source, options)
+
         media.burn_in(
             source, ass_file, destination,
             duration=info.duration,
+            source_bitrate=info.video_bitrate,
+            width=info.width,
+            height=info.height,
             progress=progress.phase("render"),
         )
         progress.finish("render")
+
+        if replacing:
+            problem = _verify_render(destination, info)
+            if problem:
+                destination.unlink(missing_ok=True)
+                result.error = (
+                    f"Refused to replace {source.name}: the new file failed its "
+                    f"check ({problem}). Your original is untouched."
+                )
+                return result
+            # os.replace is atomic within a filesystem, so the original is
+            # either the old file or the new one, never a half-written mix.
+            os.replace(destination, source)
+            destination = source
+
         result.output = destination
+        result.replaced_original = replacing
 
         # 8. Sidecars ---------------------------------------------------------
         if options.keep_sidecar_files:
@@ -283,6 +332,46 @@ def process(
         return result
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
+
+
+def _verify_render(rendered: Path, original: "media.VideoInfo") -> str | None:
+    """Check a rendered file before it is allowed to overwrite the original.
+
+    Returns None when the file looks sound, otherwise a short reason. This is
+    the only thing standing between a truncated encode and the permanent loss
+    of the user's video, so it errs towards refusing.
+    """
+    if not rendered.exists():
+        return "the file was not written"
+
+    if rendered.stat().st_size < 1024:
+        return "the file is empty"
+
+    try:
+        info = media.probe(rendered)
+    except media.MediaError as exc:
+        return f"it is not readable: {exc}"
+
+    if info.width != original.width or info.height != original.height:
+        return (
+            f"the picture size changed "
+            f"({original.width}x{original.height} to {info.width}x{info.height})"
+        )
+
+    if original.has_audio and not info.has_audio:
+        return "the audio track went missing"
+
+    # A truncated encode is the realistic failure here, so compare running time
+    # rather than trusting that ffmpeg exited cleanly.
+    if original.duration > 0 and info.duration > 0:
+        drift = abs(info.duration - original.duration)
+        if drift > max(1.0, original.duration * 0.02):
+            return (
+                f"it is {drift:.1f}s shorter or longer than the original, "
+                "which suggests the encode was cut short"
+            )
+
+    return None
 
 
 def _already_in_target(detected: str, target: Language) -> bool:
