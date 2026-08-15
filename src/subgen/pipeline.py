@@ -47,6 +47,10 @@ class Options:
     keep_sidecar_files: bool = True
     output_dir: Path | None = None
     subtitle_scale: float = 1.0
+    # Clustering cutoff for speaker separation; lower splits more eagerly.
+    speaker_sensitivity: float = diarize.DEFAULT_THRESHOLD
+    # Exact speaker count when the user knows it; -1 means auto-detect.
+    speaker_count: int = -1
 
 
 @dataclass
@@ -185,7 +189,12 @@ def process(
         turns = []
         if options.identify_speakers and diarize.is_available():
             try:
-                turns = diarize.diarize(audio, progress=progress.phase("diarize"))
+                turns = diarize.diarize(
+                    audio,
+                    num_speakers=options.speaker_count,
+                    threshold=options.speaker_sensitivity,
+                    progress=progress.phase("diarize"),
+                )
                 result.speaker_count = diarize.speaker_count(turns)
             except diarize.DiarizationError as exc:
                 # Losing speaker detection costs us stacked lines, not the run.

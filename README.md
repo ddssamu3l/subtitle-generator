@@ -16,7 +16,9 @@ Pick some videos, choose a subtitle language for each, and get back a new video 
 > "So, what's the damage?"
 > → 那，一共**多少钱**？ *(correctly understood as asking for the bill)*
 
-**Lines stack when people talk over each other.** A subtitle stays on screen long enough to read, which is usually longer than it took to say. If someone else starts speaking while the previous line is still up, the new line takes the bottom slot and the older one rises above it. If the *same* person keeps talking, their line is simply replaced. No "Speaker 1:" labels — just the layout doing the work.
+**It repairs a broken transcript before translating it.** Speech recognition mishears things. Because the translator sees the surrounding dialogue, it can work out what was actually said — "at the peer at for o'clock" becomes 四点在**码头** (*at the pier at four*). It's told to repair only what context supports, never to invent details, and never to move meaning between lines (reading a word before it's spoken is worse than an awkward break).
+
+**Lines stack when people talk over each other.** A subtitle stays on screen long enough to read, which is usually longer than it took to say. If someone else starts speaking while the previous line is still up, the new line takes the bottom slot and the older one rises above it. If the *same* person keeps talking, their line is simply replaced. Any number of speakers is supported — only the number of lines visible at once is capped, at three, for readability. No "Speaker 1:" labels — just the layout doing the work.
 
 ```
    ┌────────────────────────────┐     ┌────────────────────────────┐
@@ -127,6 +129,8 @@ subgen clip.mp4 --lang ja --model qwen3:8b --scale 1.2
 | `--whisper-model` | Transcription model (`tiny`…`large-v3`, default `large-v3`) |
 | `-o, --output-dir` | Where finished videos go |
 | `--no-speakers` | Disable speaker detection, so lines never stack |
+| `--speakers N` | Exact speaker count, if you know it (default: auto-detect) |
+| `--speaker-sensitivity F` | How eagerly to split similar voices, 0.2–0.8 (default 0.5; lower finds more) |
 | `--no-sidecars` | Don't write `.ass`/`.srt` alongside the video |
 | `--scale` | Subtitle size multiplier |
 </details>
@@ -213,6 +217,31 @@ subgen --list-models  # confirm we can see it
 Stacking needs speaker detection. Check `subgen --status` shows *Speaker models: ready*; if not, run `subgen setup`. Also make sure `--no-speakers` isn't set.
 
 Note that stacking only happens when a *different* speaker starts while a line is still up. In a single-speaker video (a lecture, a monologue) lines correctly never stack.
+</details>
+
+<details>
+<summary><b>It found the wrong number of speakers</b></summary>
+
+Speaker detection clusters voices by how similar they sound, and the default threshold is tuned for voices that contrast reasonably. Similar-sounding people get merged into one.
+
+In testing, a four-person conversation was detected as two speakers at the default and correctly as four at `0.25`:
+
+```bash
+subgen video.mp4 --speaker-sensitivity 0.25   # split similar voices apart
+subgen video.mp4 --speaker-sensitivity 0.7    # merge over-eager splits
+```
+
+The GUI exposes the same thing as **Voice separation**. Lower finds more speakers; too low starts splitting one person into several, which causes lines to stack against themselves.
+
+`--speakers N` forces an exact count, but is less reliable than it sounds — the clusterer can produce a cluster with no surviving segments and return fewer.
+</details>
+
+<details>
+<summary><b>Translation quality is mediocre, or repairs go wrong</b></summary>
+
+This depends heavily on the model you picked. Larger models follow the "repair but don't invent" instruction noticeably better. In testing on a deliberately garbled transcript, an 8B model misread "the peer" as *colleague* and pulled words backwards from the following line; a 31B model correctly produced *pier* and kept each line in place.
+
+If subtitles read oddly, try a larger model before assuming the transcript was at fault — and check `--whisper-model`, since the translator can only work with the words it's given.
 </details>
 
 <details>

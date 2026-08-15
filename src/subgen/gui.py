@@ -163,17 +163,36 @@ class App:
         self.speakers_var = tk.BooleanVar(value=bool(self.settings["identify_speakers"]))
         self.speakers_check = ttk.Checkbutton(
             box,
-            text="Stack lines when a second speaker interrupts",
+            text="Stack lines when another speaker interrupts",
             variable=self.speakers_var,
+            command=self._toggle_sensitivity,
         )
         self.speakers_check.grid(row=2, column=0, columnspan=3, sticky="w", pady=(8, 0))
+
+        # Row 3 — how eagerly to separate voices. Exposed because the right
+        # value genuinely depends on the material: voices that sound alike need
+        # a more sensitive setting than a clearly contrasting cast.
+        self.sensitivity_label = ttk.Label(box, text="Voice separation:")
+        self.sensitivity_label.grid(row=3, column=0, sticky="w", pady=(6, 0))
+
+        self.sensitivity_var = tk.StringVar(value=self.settings["speaker_sensitivity"])
+        self.sensitivity_combo = ttk.Combobox(
+            box,
+            textvariable=self.sensitivity_var,
+            values=[label for label, _ in diarize.SENSITIVITY_PRESETS],
+            state="readonly",
+            width=34,
+        )
+        self.sensitivity_combo.grid(row=3, column=1, sticky="ew", padx=(6, PAD), pady=(6, 0))
 
         self.sidecar_var = tk.BooleanVar(value=bool(self.settings["keep_sidecar_files"]))
         ttk.Checkbutton(
             box,
             text="Also save .ass and .srt files next to the video",
             variable=self.sidecar_var,
-        ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(2, 0))
+        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
+
+        self._toggle_sensitivity()
 
         self._refresh_models()
 
@@ -216,6 +235,21 @@ class App:
             if model.describe() == label:
                 return model.name
         return None
+
+    def _toggle_sensitivity(self) -> None:
+        """Grey out voice separation when speaker detection is off."""
+        enabled = self.speakers_var.get()
+        self.sensitivity_combo.configure(state="readonly" if enabled else "disabled")
+        self.sensitivity_label.configure(foreground="" if enabled else "#999")
+        if hasattr(self, "warning_box"):
+            self._refresh_warnings()
+
+    def selected_sensitivity(self) -> float:
+        chosen = self.sensitivity_var.get()
+        for label, value in diarize.SENSITIVITY_PRESETS:
+            if label == chosen:
+                return value
+        return diarize.DEFAULT_THRESHOLD
 
     def _refresh_warnings(self) -> None:
         for child in self.warning_box.winfo_children():
@@ -455,6 +489,7 @@ class App:
             ollama_host=self.settings.get("ollama_host"),
             identify_speakers=self.speakers_var.get(),
             keep_sidecar_files=self.sidecar_var.get(),
+            speaker_sensitivity=self.selected_sensitivity(),
         )
 
     def _start(self) -> None:
@@ -502,6 +537,7 @@ class App:
                 "whisper_model": self.whisper_var.get().strip(),
                 "identify_speakers": self.speakers_var.get(),
                 "keep_sidecar_files": self.sidecar_var.get(),
+                "speaker_sensitivity": self.sensitivity_var.get(),
                 "target_language": self.language_vars[self.videos[0]].get(),
             }
         )

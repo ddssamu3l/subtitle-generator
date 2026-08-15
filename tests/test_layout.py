@@ -3,9 +3,12 @@
 These encode the behaviour the tool exists to produce, so they are worth
 reading as a specification:
 
-  - a second speaker interrupting stacks below, pushing the first line up
+  - an interrupting speaker stacks below, pushing earlier lines up
   - the same speaker continuing replaces, and never stacks
   - overlaps too brief to perceive become clean replacements, not flicker
+
+Any number of speakers is supported; only the number of lines visible at once
+is capped, for readability.
 """
 
 from __future__ import annotations
@@ -64,6 +67,38 @@ def test_same_speaker_never_stacks():
     ]
     placements = subtitles.layout(align.apply_readability(cues))
     assert all(p.slot == 0 for p in placements), "one voice must never stack on itself"
+
+
+def test_many_speakers_each_take_the_bottom_slot_in_turn():
+    # Nothing about the design is limited to two voices. With five speakers in a
+    # round-table conversation, whoever spoke most recently is always the bottom
+    # line and the others sit above in order of recency.
+    cues = [cue(index * 1.0, index * 1.0 + 2.5, f"Speaker {index} talking",
+                speaker=index)
+            for index in range(5)]
+    placements = subtitles.layout(cues)
+
+    assert len({p.cue.speaker for p in placements}) == 5, "all five must appear"
+
+    for moment in (1.5, 2.5, 3.5, 4.5):
+        visible = [p for p in placements if p.start <= moment < p.end]
+        if not visible:
+            continue
+        bottom = min(visible, key=lambda p: p.slot)
+        newest = max(visible, key=lambda p: p.cue.start)
+        assert bottom.cue.speaker == newest.cue.speaker, (
+            f"at t={moment} the most recent speaker should hold the bottom slot"
+        )
+        # Slots are contiguous from the bottom, never leaving a visual gap.
+        assert sorted(p.slot for p in visible) == list(range(len(visible)))
+
+
+def test_speaker_count_is_not_capped_at_the_stack_limit():
+    # The stack limit bounds lines on screen, not how many speakers exist.
+    cues = [cue(index * 2.0, index * 2.0 + 1.5, f"Line {index}", speaker=index)
+            for index in range(8)]
+    placements = subtitles.layout(align.apply_readability(cues))
+    assert len({p.cue.speaker for p in placements}) == 8
 
 
 def test_third_speaker_does_not_produce_a_fourth_line():

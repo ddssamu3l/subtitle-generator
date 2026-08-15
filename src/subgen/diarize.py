@@ -77,18 +77,40 @@ def is_available() -> bool:
     return True
 
 
+# Clustering cutoff used when the speaker count is unknown. Lower values split
+# more eagerly. 0.5 is a reasonable default for real recordings, but it does
+# merge genuinely similar voices — in testing, three different female speakers
+# were clustered as one at 0.5 and only separated cleanly at 0.25. Since the
+# right value depends entirely on the material, it is exposed to the user
+# rather than buried here.
+DEFAULT_THRESHOLD = 0.5
+
+# Friendly presets for the GUI, mapping a description to a threshold.
+SENSITIVITY_PRESETS: tuple[tuple[str, float], ...] = (
+    ("Balanced (recommended)", 0.50),
+    ("Sensitive — separates similar voices", 0.35),
+    ("Most sensitive — many similar voices", 0.25),
+    ("Conservative — fewer, clearer speakers", 0.70),
+)
+
+
 def diarize(
     audio_path: Path,
     *,
     num_speakers: int = -1,
-    threshold: float = 0.5,
+    threshold: float = DEFAULT_THRESHOLD,
     progress: ProgressFn | None = None,
 ) -> list[SpeakerTurn]:
     """Return speaker turns sorted by start time.
 
-    `num_speakers` of -1 means "work it out", which is what we want by default —
-    the user picked a video, not a cast list. `threshold` is the clustering
-    cutoff used in that case: lower splits voices more eagerly.
+    `num_speakers` of -1 means "work it out", which is the right default — the
+    user picked a video, not a cast list. Any number of speakers is supported;
+    nothing here assumes two.
+
+    `threshold` is the clustering cutoff used when the count is unknown. Lower
+    splits voices more eagerly. Note that forcing an exact `num_speakers` is
+    less reliable than it sounds: the clusterer can produce a cluster that ends
+    up with no surviving segments, yielding fewer labels than requested.
     """
     try:
         import sherpa_onnx

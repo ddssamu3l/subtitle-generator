@@ -85,6 +85,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="disable speaker detection, so lines never stack",
     )
     parser.add_argument(
+        "--speakers", type=int, default=-1, metavar="N",
+        help="exact number of speakers, if you know it (default: auto-detect)",
+    )
+    parser.add_argument(
+        "--speaker-sensitivity", type=float, default=diarize.DEFAULT_THRESHOLD,
+        metavar="F",
+        help=(
+            f"how eagerly to split similar voices, 0.2-0.8 "
+            f"(default: {diarize.DEFAULT_THRESHOLD}; lower finds more speakers)"
+        ),
+    )
+    parser.add_argument(
         "--no-sidecars", action="store_true",
         help="do not write .ass/.srt files alongside the video",
     )
@@ -274,6 +286,8 @@ def _headless(args: argparse.Namespace) -> int:
         keep_sidecar_files=not args.no_sidecars,
         output_dir=args.output_dir,
         subtitle_scale=args.scale,
+        speaker_sensitivity=args.speaker_sensitivity,
+        speaker_count=args.speakers,
     )
 
     problems = pipeline.preflight(options)
