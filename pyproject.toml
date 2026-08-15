@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "subtitle-generator"
+version = "0.1.0"
+description = "Burn speaker-aware, meaning-first subtitles into your videos, fully offline."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+# Kept deliberately small. No PyTorch anywhere: faster-whisper runs on
+# CTranslate2 and diarization runs on onnxruntime, so a clean install is
+# ~200MB of wheels instead of ~2.5GB.
+dependencies = [
+    "faster-whisper>=1.0",
+    "sherpa-onnx>=1.10",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+# Apple Silicon GPU transcription. Auto-detected at runtime; the tool works
+# without it, just slower. Not a hard dependency because it is macOS/arm64 only.
+mlx = ["mlx-whisper>=0.4"]
+
+[project.scripts]
+subgen = "subgen.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/subgen"]
